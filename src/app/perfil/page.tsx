@@ -20,7 +20,7 @@ import { useUser } from "@/contexts/user-context";
 import { regions } from "@/lib/chilean-regions";
 import { validateChileanRut, formatRut } from "@/lib/rut";
 import { toast } from "sonner";
-import { User as UserIcon, MapPin, Shield, CheckCircle, AlertCircle, Lock } from "lucide-react";
+import { User as UserIcon, MapPin, Shield, CheckCircle, AlertCircle, Lock, Download, Trash2 } from "lucide-react";
 
 export default function PerfilPage() {
   const { user, loading: userLoading } = useUser();
@@ -39,6 +39,9 @@ export default function PerfilPage() {
     address_zip: "",
   });
   const [privacyAcceptedAt, setPrivacyAcceptedAt] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const [rutError, setRutError] = useState<string | null>(null);
   const [rutTouched, setRutTouched] = useState(false);
@@ -364,6 +367,120 @@ export default function PerfilPage() {
           {saving ? "Guardando..." : "Guardar Perfil"}
         </Button>
       </form>
+
+      {/* ── Sección ARCOP — Ley 21.719 ── */}
+      <Card className="mt-6 border-muted">
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Shield className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-xl font-semibold">Mis Datos y Privacidad</h2>
+          </div>
+          <Separator />
+          <p className="text-sm text-muted-foreground">
+            De acuerdo con la{" "}
+            <Link href="/privacidad" className="text-primary underline hover:no-underline" target="_blank">
+              Ley N° 21.719
+            </Link>
+            {" "}tienes derecho a acceder, rectificar, suprimir y portar tus datos personales.
+          </p>
+
+          {/* Portabilidad */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              variant="outline"
+              className="flex-1 cursor-pointer"
+              disabled={downloading}
+              onClick={async () => {
+                setDownloading(true);
+                try {
+                  const res = await fetch("/api/my-data/export");
+                  if (!res.ok) throw new Error("Error al exportar");
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `mis-datos-${new Date().toISOString().split("T")[0]}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success("Datos exportados correctamente.");
+                } catch {
+                  toast.error("No se pudo exportar tus datos. Intenta nuevamente.");
+                } finally {
+                  setDownloading(false);
+                }
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              {downloading ? "Preparando..." : "Descargar mis datos"}
+            </Button>
+          </div>
+
+          {/* Supresión */}
+          <Separator />
+          {!deleteConfirm ? (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                También puedes solicitar la eliminación de tu cuenta y todos tus datos personales.
+                Esta acción es irreversible.
+              </p>
+              <Button
+                variant="destructive"
+                className="cursor-pointer"
+                onClick={() => setDeleteConfirm(true)}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Eliminar mi cuenta
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-3">
+              <p className="text-sm font-medium text-destructive">
+                ¿Estás seguro? Esta acción eliminará permanentemente tu perfil, pedidos y datos
+                personales. Las cotizaciones quedarán anonimizadas por obligación legal.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={deleting}
+                  className="cursor-pointer"
+                  onClick={async () => {
+                    setDeleting(true);
+                    try {
+                      const res = await fetch("/api/my-data/delete", {
+                        method: "DELETE",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ confirmar: "ELIMINAR MI CUENTA" }),
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.error || "Error al eliminar");
+                      }
+                      toast.success("Tu cuenta ha sido eliminada.");
+                      router.push("/");
+                    } catch (err) {
+                      const e = err as { message?: string };
+                      toast.error(e.message || "Error al eliminar la cuenta.");
+                      setDeleting(false);
+                      setDeleteConfirm(false);
+                    }
+                  }}
+                >
+                  {deleting ? "Eliminando..." : "Sí, eliminar definitivamente"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="cursor-pointer"
+                  onClick={() => setDeleteConfirm(false)}
+                >
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
